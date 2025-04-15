@@ -1,0 +1,56 @@
+const functions = require('@google-cloud/functions-framework');
+const { Storage } = require('@google-cloud/storage');
+const sharp = require('sharp');
+const { Pool } = require('pg');
+
+const storage = new Storage();
+
+const pool = new Pool({
+  user: "postgres",
+  host: "35.233.58.77",
+  database: "photos",
+  password:"postgres",
+  port: 5432,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
+
+functions.cloudEvent('saveFile', async cloudEvent => {
+   const file = cloudEvent.data;
+  const sourceBucket = file.bucket;
+  const fileName = file.name;
+
+  const destinationBucket = 'tplt-public';
+
+  // Télécharge l'image dans un buffer
+  const [originalImage] = await storage.bucket(sourceBucket).file(fileName).download();
+
+  // Utilise sharp pour redimensionner l'image en carré
+  const image = sharp(originalImage);
+  const metadata = await image.metadata();
+  const size = Math.min(metadata.width, metadata.height);
+
+  const squareImageBuffer = await image
+    .resize(size, size, { fit: sharp.fit.cover })
+    .toBuffer();
+
+  // Envoie l'image redimensionnée vers l'autre bucket
+   storage.bucket(destinationBucket).file(fileName).save(squareImageBuffer, {
+    contentType: file.contentType,
+  });
+
+  console.log(`Image ${fileName} redimensionnée en carré et envoyée vers ${destinationBucket}`);
+
+  const client = await pool.connect();
+    try {
+      await client.query(
+        'INSERT INTO images (filename, image_data) VALUES ($1, $2)',
+        [fileName, squareImageBuffer]
+      );
+      console.log(`Image ${fileName} enregistrée dans la base de données`);
+    } finally {
+      client.release();
+    }
+});
+
