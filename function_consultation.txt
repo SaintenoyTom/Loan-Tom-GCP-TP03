@@ -1,0 +1,23 @@
+const functions = require('@google-cloud/functions-framework');
+const { Pool } = require('pg');
+
+const pool = new Pool({
+  user: "postgres",
+  host: "35.233.58.77",
+  database: "photos",
+  password:"postgres",
+  port: 5432,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
+
+functions.http('consultation', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM images'); 
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Erreur lors de la requête :', error);
+    res.status(500).send('Erreur interne');
+  }
+});
